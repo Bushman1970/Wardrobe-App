@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Wardrobe" />
+<title>Wardrobe Tracker</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+<style>
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; overscroll-behavior: none; }
+  ::-webkit-scrollbar { display: none; }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+  input, select, textarea { font-size: 16px !important; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.2s ease-out; }
+  @keyframes checkPop { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+  .check-pop { animation: checkPop 0.25s ease-out; }
+  .bar-animate { transition: height 0.4s ease-out; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+/* ─── IndexedDB ─────────────────────────────────────────────────────────── */
+const DB_NAME = "WardrobeTracker";
+const DB_VERSION = 1;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains("clothes")) {
+        const cs = db.createObjectStore("clothes", { keyPath: "id" });
+        cs.createIndex("category", "category");
+      }
+      if (!db.objectStoreNames.contains("outfits")) {
+        const os = db.createObjectStore("outfits", { keyPath: "id" });
+        os.createIndex("date", "date");
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGetAll(store) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readonly");
+    const r = tx.objectStore(store).getAll();
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+
+async function dbPut(store, item) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    const r = tx.objectStore(store).put(item);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+
+async function dbDelete(store, id) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    const r = tx.objectStore(store).delete(id);
+    r.onsuccess = () => res();
+    r.onerror = () => rej(r.error);
+  });
+}
+
+async function dbClear(store) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    const r = tx.objectStore(store).clear();
+    r.onsuccess = () => res();
+    r.onerror = () => rej(r.error);
+  });
+}
+
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const CATEGORIES = ["Tops", "Bottoms", "Shoes", "Outerwear", "Accessories", "Dresses", "Activewear", "Other"];
+const OCCASIONS = ["Casual", "Work", "Meeting", "Date", "Event", "Travel", "Workout", "Other"];
+const COLORS_LIST = ["Black", "White", "Gray", "Navy", "Blue", "Red", "Green", "Brown", "Tan", "Pink", "Purple", "Orange", "Yellow", "Multi"];
+const CHART_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
+const EMOJI_MAP = { Tops: "\u{1F455}", Bottoms: "\u{1F456}", Shoes: "\u{1F45F}", Outerwear: "\u{1F9E5}", Accessories: "\u{1F392}", Dresses: "\u{1F457}", Activewear: "\u{1FA73}", Other: "\u{1F4E6}" };
+
+function toDateStr(d) { return d.toISOString().split("T")[0]; }
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.readAsDataURL(file);
+  });
+}
+
+const COLOR_DOT = {
+  Black: "#1f2937", White: "#e5e7eb", Gray: "#9ca3af", Navy: "#1e3a5f", Blue: "#3b82f6",
+  Red: "#ef4444", Green: "#22c55e", Brown: "#92400e", Tan: "#d2b48c", Pink: "#ec4899",
+  Purple: "#8b5cf6", Orange: "#f97316", Yellow: "#eab308", Multi: "linear-gradient(135deg, #ef4444, #3b82f6, #22c55e)"
+};
+
+/* ─── Simple CSS Bar Chart ──────────────────────────────────────────────── */
+function SimpleBarChart({ data, labelKey, valueKey, color }) {
+  const max = Math.max(...data.map(d => d[valueKey]), 1);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 140, padding: "0 4px" }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%" }}>
+          <span style={{ fontSize: 10, color: "#6b7280", marginBottom: 4 }}>{d[valueKey]}</span>
+          <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end" }}>
+            <div className="bar-animate" style={{
+              width: "100%", borderRadius: "6px 6px 0 0",
+              background: color || "#6366f1",
+              height: `${(d[valueKey] / max) * 100}%`,
+              minHeight: d[valueKey] > 0 ? 4 : 0,
+            }} />
+          </div>
+          <span style={{ fontSize: 10, color: "#9ca3af", marginTop: 4, whiteSpace: "nowrap" }}>{d[labelKey]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Simple Donut Chart (pure CSS) ─────────────────────────────────────── */
+function SimpleDonut({ data, colors }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return null;
+  let cumPercent = 0;
+  const segments = data.map((d, i) => {
+    const percent = (d.value / total) * 100;
+    const segment = { ...d, percent, offset: cumPercent, color: colors[i % colors.length] };
+    cumPercent += percent;
+    return segment;
+  });
+  // Build conic-gradient
+  const gradientParts = segments.map(s => `${s.color} ${s.offset}% ${s.offset + s.percent}%`).join(", ");
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{
+        width: 120, height: 120, borderRadius: "50%", flexShrink: 0,
+        background: `conic-gradient(${gradientParts})`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <div style={{ width: 60, height: 60, borderRadius: "50%", background: "white" }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {segments.map((s, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "#4b5563" }}>{s.name} ({s.value})</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Modal ─────────────────────────────────────────────────────────────── */
+function Modal({ open, onClose, title, children }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg overflow-y-auto fade-in"
+        style={{ maxHeight: "90vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b sticky top-0 bg-white z-10 rounded-t-2xl" style={{ borderColor: "#f3f4f6" }}>
+          <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+          <button onClick={onClose} className="p-2 rounded-xl text-gray-400">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+        <div className="px-5 py-4 safe-bottom">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Clothing Form ─────────────────────────────────────────────────────── */
+function ClothingForm({ item, onSave, onCancel }) {
+  const [form, setForm] = useState(
+    item || { id: uid(), name: "", category: "Tops", color: "Black", brand: "", notes: "", photo: null, dateAdded: toDateStr(new Date()), wearCount: 0 }
+  );
+  const fileRef = useRef();
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const dataUrl = await readFileAsDataURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const MAX = 600;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = h * MAX / w; w = MAX; } else { w = w * MAX / h; h = MAX; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      setForm(function(f) { return Object.assign({}, f, { photo: canvas.toDataURL("image/jpeg", 0.8) }); });
+    };
+    img.src = dataUrl;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div
+        className="relative w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center overflow-hidden"
+        style={{ height: 176 }}
+        onClick={() => fileRef.current && fileRef.current.click()}
+      >
+        {form.photo ? (
+          <img src={form.photo} alt="preview" className="w-full h-full object-cover" />
+        ) : (
+          <React.Fragment>
+            <svg className="w-8 h-8 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            <span className="mt-2 text-sm text-gray-400">Tap to add photo</span>
+          </React.Fragment>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">Name *</label>
+        <input className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm" style={{ fontSize: 16 }} placeholder="e.g. Blue Oxford Shirt" value={form.name} onChange={(e) => setForm(function(f) { return Object.assign({}, f, { name: e.target.value }); })} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Category</label>
+          <select className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm bg-white" value={form.category} onChange={(e) => setForm(function(f) { return Object.assign({}, f, { category: e.target.value }); })}>
+            {CATEGORIES.map(function(c) { return <option key={c}>{c}</option>; })}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Color</label>
+          <select className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm bg-white" value={form.color} onChange={(e) => setForm(function(f) { return Object.assign({}, f, { color: e.target.value }); })}>
+            {COLORS_LIST.map(function(c) { return <option key={c}>{c}</option>; })}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Brand</label>
+          <input className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm" style={{ fontSize: 16 }} placeholder="Optional" value={form.brand} onChange={(e) => setForm(function(f) { return Object.assign({}, f, { brand: e.target.value }); })} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Notes</label>
+          <input className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm" style={{ fontSize: 16 }} placeholder="Optional" value={form.notes} onChange={(e) => setForm(function(f) { return Object.assign({}, f, { notes: e.target.value }); })} />
+        </div>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button onClick={function() { if (form.name.trim()) onSave(form); }} disabled={!form.name.trim()} className="flex-1 py-3 bg-indigo-500 text-white rounded-xl font-semibold text-sm" style={{ opacity: form.name.trim() ? 1 : 0.4 }}>
+          {item ? "Save Changes" : "Add to Closet"}
+        </button>
+        <button onClick={onCancel} className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Clothing Card ─────────────────────────────────────────────────────── */
+function ClothingCard({ item, onEdit, onDelete, selectable, selected, onToggle }) {
+  return (
+    <div
+      className="relative bg-white rounded-xl overflow-hidden"
+      style={{ border: selected ? "2px solid #6366f1" : "2px solid #f3f4f6" }}
+      onClick={function() { selectable ? (onToggle && onToggle(item.id)) : (onEdit && onEdit(item)); }}
+    >
+      <div className="w-full bg-gray-50 flex items-center justify-center overflow-hidden" style={{ height: 112 }}>
+        {item.photo ? (
+          <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />
+        ) : (
+          <div style={{ fontSize: 32 }}>{EMOJI_MAP[item.category] || "\u{1F4E6}"}</div>
+        )}
+      </div>
+      <div className="absolute top-1 right-1 bg-white rounded-full px-1.5 py-0.5 text-xs font-bold text-indigo-600" style={{ fontSize: 10, opacity: 0.9 }}>
+        {item.wearCount}x
+      </div>
+      {selected && (
+        <div className="absolute top-1 left-1 w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center check-pop">
+          <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+      )}
+      <div className="p-2">
+        <div className="flex items-center gap-1">
+          <div className="rounded-full border" style={{ width: 10, height: 10, background: COLOR_DOT[item.color] || "#ccc", borderColor: "#e5e7eb", flexShrink: 0 }} />
+          <h3 className="text-xs font-medium text-gray-800 truncate">{item.name}</h3>
+        </div>
+        <p className="text-xs text-gray-400 truncate" style={{ fontSize: 10 }}>{item.category}{item.brand ? " \u00b7 " + item.brand : ""}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Closet Tab ────────────────────────────────────────────────────────── */
+function ClosetTab({ clothes, onRefresh }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [filterCat, setFilterCat] = useState("All");
+  const [sortBy, setSortBy] = useState("dateAdded");
+  const [search, setSearch] = useState("");
+  const [deleteId, setDeleteId] = useState(null);
+
+  const filtered = useMemo(function() {
+    var items = clothes.slice();
+    if (filterCat !== "All") items = items.filter(function(i) { return i.category === filterCat; });
+    if (search) {
+      var q = search.toLowerCase();
+      items = items.filter(function(i) { return i.name.toLowerCase().indexOf(q) >= 0 || (i.brand && i.brand.toLowerCase().indexOf(q) >= 0); });
+    }
+    if (sortBy === "wearCount") items.sort(function(a, b) { return b.wearCount - a.wearCount; });
+    else if (sortBy === "name") items.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    else items.sort(function(a, b) { return b.dateAdded.localeCompare(a.dateAdded); });
+    return items;
+  }, [clothes, filterCat, sortBy, search]);
+
+  var handleSave = async function(item) {
+    await dbPut("clothes", item);
+    setShowForm(false); setEditing(null); onRefresh();
+  };
+
+  var handleDelete = async function(id) {
+    await dbDelete("clothes", id);
+    setDeleteId(null); onRefresh();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">My Closet</h1>
+          <p className="text-xs text-gray-400">{clothes.length} items</p>
+        </div>
+        <button onClick={function() { setEditing(null); setShowForm(true); }} className="flex items-center gap-1 px-4 py-2 bg-indigo-500 text-white rounded-xl font-semibold text-sm">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          Add
+        </button>
+      </div>
+
+      <div className="space-y-2 mb-4">
+        <div className="relative">
+          <svg className="absolute text-gray-300" style={{ left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input className="w-full bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none" style={{ paddingLeft: 36, paddingRight: 12, paddingTop: 10, paddingBottom: 10, fontSize: 16 }} placeholder="Search items..." value={search} onChange={function(e) { setSearch(e.target.value); }} />
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
+          {["All"].concat(CATEGORIES).map(function(cat) {
+            return <button key={cat} className="rounded-full text-xs font-medium" style={{ padding: "6px 12px", whiteSpace: "nowrap", flexShrink: 0, background: filterCat === cat ? "#6366f1" : "#f3f4f6", color: filterCat === cat ? "white" : "#4b5563" }} onClick={function() { setFilterCat(cat); }}>{cat}</button>;
+          })}
+        </div>
+        <div className="flex justify-end">
+          <select className="px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs outline-none" value={sortBy} onChange={function(e) { setSortBy(e.target.value); }}>
+            <option value="dateAdded">Newest</option>
+            <option value="wearCount">Most Worn</option>
+            <option value="name">A-Z</option>
+          </select>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <p style={{ fontSize: 40, marginBottom: 12 }}>{"\u{1F455}"}</p>
+          <p className="font-medium">{clothes.length === 0 ? "No items yet" : "No matches"}</p>
+          <p className="text-sm mt-1">{clothes.length === 0 ? "Tap Add to get started" : "Try a different filter"}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {filtered.map(function(item) {
+            return <ClothingCard key={item.id} item={item} onEdit={function(i) { setEditing(i); setShowForm(true); }} onDelete={function(id) { setDeleteId(id); }} />;
+          })}
+        </div>
+      )}
+
+      <Modal open={showForm} onClose={function() { setShowForm(false); setEditing(null); }} title={editing ? "Edit Item" : "Add New Item"}>
+        <ClothingForm item={editing} onSave={handleSave} onCancel={function() { setShowForm(false); setEditing(null); }} />
+      </Modal>
+
+      <Modal open={!!deleteId} onClose={function() { setDeleteId(null); }} title="Delete Item?">
+        <p className="text-sm text-gray-600 mb-4">This will permanently remove this item from your closet.</p>
+        <div className="flex gap-2">
+          <button onClick={function() { handleDelete(deleteId); }} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-medium text-sm">Delete</button>
+          <button onClick={function() { setDeleteId(null); }} className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm">Cancel</button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ─── Outfit Logger Tab ─────────────────────────────────────────────────── */
+function OutfitLoggerTab({ clothes, outfits, onRefresh }) {
+  const [date, setDate] = useState(toDateStr(new Date()));
+  const [selected, setSelected] = useState(new Set());
+  const [occasion, setOccasion] = useState("Casual");
+  const [people, setPeople] = useState("");
+  const [notes, setNotes] = useState("");
+  const [filterCat, setFilterCat] = useState("All");
+  const [saved, setSaved] = useState(false);
+
+  var existingOutfit = useMemo(function() { return outfits.find(function(o) { return o.date === date; }); }, [outfits, date]);
+
+  useEffect(function() {
+    if (existingOutfit) {
+      setSelected(new Set(existingOutfit.items));
+      setOccasion(existingOutfit.occasion || "Casual");
+      setPeople(existingOutfit.people || "");
+      setNotes(existingOutfit.notes || "");
+    } else {
+      setSelected(new Set());
+      setOccasion("Casual");
+      setPeople("");
+      setNotes("");
+    }
+  }, [existingOutfit]);
+
+  var toggle = function(id) {
+    setSelected(function(prev) {
+      var next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  var filteredClothes = useMemo(function() {
+    if (filterCat === "All") return clothes;
+    return clothes.filter(function(c) { return c.category === filterCat; });
+  }, [clothes, filterCat]);
+
+  var handleSave = async function() {
+    var outfitId = (existingOutfit && existingOutfit.id) || uid();
+    var selArray = Array.from(selected);
+    await dbPut("outfits", { id: outfitId, date: date, items: selArray, occasion: occasion, people: people, notes: notes });
+    for (var i = 0; i < clothes.length; i++) {
+      var item = clothes[i];
+      var was = existingOutfit && existingOutfit.items && existingOutfit.items.indexOf(item.id) >= 0;
+      var is = selected.has(item.id);
+      if (is && !was) await dbPut("clothes", Object.assign({}, item, { wearCount: item.wearCount + 1 }));
+      else if (!is && was) await dbPut("clothes", Object.assign({}, item, { wearCount: Math.max(0, item.wearCount - 1) }));
+    }
+    onRefresh();
+    setSaved(true);
+    setTimeout(function() { setSaved(false); }, 2000);
+  };
+
+  var selArray = Array.from(selected);
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold text-gray-800 mb-1">Log Outfit</h1>
+      <p className="text-xs text-gray-400 mb-4">Select what you're wearing</p>
+
+      <div className="bg-gray-50 rounded-xl p-3 mb-4 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
+            <input type="date" className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" value={date} onChange={function(e) { setDate(e.target.value); }} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Occasion</label>
+            <select className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" value={occasion} onChange={function(e) { setOccasion(e.target.value); }}>
+              {OCCASIONS.map(function(o) { return <option key={o}>{o}</option>; })}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Who are you meeting?</label>
+          <input className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" style={{ fontSize: 16 }} placeholder="e.g. Lunch with Sarah" value={people} onChange={function(e) { setPeople(e.target.value); }} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+          <input className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" style={{ fontSize: 16 }} placeholder="Optional" value={notes} onChange={function(e) { setNotes(e.target.value); }} />
+        </div>
+      </div>
+
+      {selArray.length > 0 && (
+        <div className="mb-3 p-3 rounded-xl flex items-center justify-between fade-in" style={{ background: "#eef2ff" }}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold" style={{ color: "#4338ca" }}>{selArray.length} item{selArray.length > 1 ? "s" : ""}</span>
+            <div className="flex" style={{ marginLeft: -4 }}>
+              {selArray.slice(0, 5).map(function(id) {
+                var item = clothes.find(function(c) { return c.id === id; });
+                if (!item) return null;
+                return (
+                  <div key={id} className="rounded-full border-2 border-white bg-gray-100 overflow-hidden" style={{ width: 28, height: 28, marginLeft: -4, flexShrink: 0 }}>
+                    {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : <span className="flex items-center justify-center w-full h-full text-xs">{"\u{1F455}"}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <button onClick={handleSave} className="px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: saved ? "#22c55e" : "#6366f1" }}>
+            {saved ? "\u2713 Saved!" : existingOutfit ? "Update" : "Save"}
+          </button>
+        </div>
+      )}
+
+      <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3" style={{ WebkitOverflowScrolling: "touch" }}>
+        {["All"].concat(CATEGORIES).map(function(cat) {
+          return <button key={cat} className="rounded-full text-xs font-medium" style={{ padding: "6px 12px", whiteSpace: "nowrap", flexShrink: 0, background: filterCat === cat ? "#6366f1" : "#f3f4f6", color: filterCat === cat ? "white" : "#6b7280" }} onClick={function() { setFilterCat(cat); }}>{cat}</button>;
+        })}
+      </div>
+
+      {clothes.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <p className="font-medium">Closet is empty</p>
+          <p className="text-sm mt-1">Add items in the Closet tab first</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {filteredClothes.map(function(item) {
+            return <ClothingCard key={item.id} item={item} selectable={true} selected={selected.has(item.id)} onToggle={toggle} />;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Calendar Tab ──────────────────────────────────────────────────────── */
+function CalendarTab({ clothes, outfits }) {
+  const [viewDate, setViewDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [personSearch, setPersonSearch] = useState("");
+
+  var year = viewDate.getFullYear();
+  var month = viewDate.getMonth();
+  var firstDay = new Date(year, month, 1).getDay();
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  var monthName = viewDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  var outfitMap = useMemo(function() {
+    var m = {};
+    outfits.forEach(function(o) { m[o.date] = o; });
+    return m;
+  }, [outfits]);
+
+  var clothesMap = useMemo(function() {
+    var m = {};
+    clothes.forEach(function(c) { m[c.id] = c; });
+    return m;
+  }, [clothes]);
+
+  var personResults = useMemo(function() {
+    if (!personSearch.trim()) return null;
+    var q = personSearch.toLowerCase();
+    return outfits.filter(function(o) { return o.people && o.people.toLowerCase().indexOf(q) >= 0; }).sort(function(a, b) { return b.date.localeCompare(a.date); });
+  }, [outfits, personSearch]);
+
+  var dayOutfit = selectedDay ? outfitMap[selectedDay] : null;
+
+  var emptySlots = [];
+  for (var e = 0; e < firstDay; e++) emptySlots.push(e);
+  var daySlots = [];
+  for (var d = 1; d <= daysInMonth; d++) daySlots.push(d);
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold text-gray-800 mb-4">Calendar</h1>
+
+      <div className="relative mb-4">
+        <svg className="absolute text-gray-300" style={{ left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input className="w-full bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none" style={{ paddingLeft: 36, paddingRight: 12, paddingTop: 10, paddingBottom: 10, fontSize: 16 }} placeholder="Search by person..." value={personSearch} onChange={function(e) { setPersonSearch(e.target.value); }} />
+      </div>
+
+      {personResults && (
+        <div className="mb-4">
+          {personResults.length === 0 ? (
+            <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-400 text-center">No results</div>
+          ) : (
+            <div className="space-y-2" style={{ maxHeight: 256, overflowY: "auto" }}>
+              <p className="text-xs font-medium text-gray-400">{personResults.length} outfit{personResults.length > 1 ? "s" : ""}</p>
+              {personResults.map(function(outfit) {
+                return (
+                  <div key={outfit.id} className="bg-white border rounded-xl p-3 flex items-center gap-3" style={{ borderColor: "#f3f4f6" }} onClick={function() { setSelectedDay(outfit.date); }}>
+                    <div className="text-xs font-semibold text-gray-700" style={{ width: 70, flexShrink: 0 }}>
+                      {new Date(outfit.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </div>
+                    <div className="flex" style={{ flexShrink: 0 }}>
+                      {outfit.items.slice(0, 3).map(function(id) {
+                        var item = clothesMap[id];
+                        if (!item) return null;
+                        return (
+                          <div key={id} className="rounded-full border-2 border-white bg-gray-100 overflow-hidden" style={{ width: 28, height: 28, marginLeft: -6 }}>
+                            {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : <span className="flex items-center justify-center w-full h-full text-xs">{"\u{1F455}"}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex-1" style={{ minWidth: 0 }}>
+                      <p className="text-xs text-gray-600 truncate">{outfit.people}</p>
+                      <p className="text-xs text-gray-400">{outfit.occasion}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: "#f3f4f6" }}>
+        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b" style={{ borderColor: "#f3f4f6" }}>
+          <button onClick={function() { setViewDate(new Date(year, month - 1, 1)); }} className="p-1.5">
+            <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-800">{monthName}</span>
+            <button onClick={function() { setViewDate(new Date()); }} className="text-xs font-medium" style={{ color: "#6366f1" }}>Today</button>
+          </div>
+          <button onClick={function() { setViewDate(new Date(year, month + 1, 1)); }} className="p-1.5">
+            <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 text-center text-xs font-medium text-gray-400 py-1.5 border-b" style={{ borderColor: "#fafafa" }}>
+          {["S","M","T","W","T","F","S"].map(function(d, i) { return <div key={i}>{d}</div>; })}
+        </div>
+
+        <div className="grid grid-cols-7">
+          {emptySlots.map(function(i) { return <div key={"e" + i} style={{ height: 52, borderBottom: "1px solid #fafafa", borderRight: "1px solid #fafafa" }} />; })}
+          {daySlots.map(function(day) {
+            var dateStr = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+            var outfit = outfitMap[dateStr];
+            var isToday = dateStr === toDateStr(new Date());
+            return (
+              <div key={day} style={{ height: 52, borderBottom: "1px solid #fafafa", borderRight: "1px solid #fafafa", padding: 2, background: selectedDay === dateStr ? "#eef2ff" : "transparent" }} onClick={function() { setSelectedDay(dateStr); }}>
+                <div className="text-center" style={{ fontSize: 11, fontWeight: isToday ? 700 : 400, color: isToday ? "#6366f1" : "#6b7280" }}>
+                  {isToday ? (
+                    <span style={{ background: "#6366f1", color: "white", width: 20, height: 20, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>{day}</span>
+                  ) : day}
+                </div>
+                {outfit && (
+                  <div className="flex justify-center" style={{ marginTop: 2 }}>
+                    {outfit.items.slice(0, 2).map(function(id) {
+                      var item = clothesMap[id];
+                      if (!item) return null;
+                      return (
+                        <div key={id} className="rounded-full border border-white bg-gray-100 overflow-hidden" style={{ width: 14, height: 14, marginLeft: -2 }}>
+                          {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : null}
+                        </div>
+                      );
+                    })}
+                    {outfit.items.length > 0 && !outfit.items.some(function(id) { return clothesMap[id] && clothesMap[id].photo; }) && (
+                      <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ fontSize: 7 }}>{"\u{1F455}"}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <Modal open={!!selectedDay} onClose={function() { setSelectedDay(null); }} title={selectedDay ? new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric" }) : ""}>
+        {dayOutfit ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: "#eef2ff", color: "#4338ca" }}>{dayOutfit.occasion}</span>
+              {dayOutfit.people && <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: "#fef3c7", color: "#92400e" }}>{dayOutfit.people}</span>}
+            </div>
+            {dayOutfit.notes && <p className="text-sm text-gray-500">{dayOutfit.notes}</p>}
+            <div className="grid grid-cols-2 gap-2">
+              {dayOutfit.items.map(function(id) {
+                var item = clothesMap[id];
+                if (!item) return null;
+                return (
+                  <div key={id} className="bg-gray-50 rounded-xl overflow-hidden">
+                    <div className="bg-gray-100 flex items-center justify-center overflow-hidden" style={{ height: 96 }}>
+                      {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : <span style={{ fontSize: 28 }}>{"\u{1F455}"}</span>}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs font-medium text-gray-700 truncate">{item.name}</p>
+                      <p className="text-xs text-gray-400">{item.category}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-8">No outfit logged for this day</p>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+/* ─── Stats Tab ─────────────────────────────────────────────────────────── */
+function StatsTab({ clothes, outfits }) {
+  var topWorn = useMemo(function() {
+    return clothes.slice().sort(function(a, b) { return b.wearCount - a.wearCount; }).slice(0, 10).filter(function(c) { return c.wearCount > 0; });
+  }, [clothes]);
+
+  var neverWorn = useMemo(function() { return clothes.filter(function(c) { return c.wearCount === 0; }); }, [clothes]);
+
+  var categoryData = useMemo(function() {
+    var m = {};
+    clothes.forEach(function(c) { m[c.category] = (m[c.category] || 0) + 1; });
+    return Object.keys(m).map(function(name) { return { name: name, value: m[name] }; });
+  }, [clothes]);
+
+  var monthlyData = useMemo(function() {
+    var m = {};
+    outfits.forEach(function(o) { var k = o.date.slice(0, 7); m[k] = (m[k] || 0) + 1; });
+    return Object.keys(m).sort().slice(-6).map(function(k) {
+      return { month: new Date(k + "-01T12:00:00").toLocaleDateString("en-US", { month: "short" }), count: m[k] };
+    });
+  }, [outfits]);
+
+  if (clothes.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <p style={{ fontSize: 40, marginBottom: 12 }}>{"\u{1F4CA}"}</p>
+        <p className="font-medium">No data yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold text-gray-800 mb-1">Stats</h1>
+      <p className="text-xs text-gray-400 mb-5">{clothes.length} items {"\u00b7"} {outfits.length} outfits</p>
+
+      <div className="space-y-4">
+        <div className="bg-white rounded-2xl border p-4" style={{ borderColor: "#f3f4f6" }}>
+          <h3 className="font-semibold text-gray-700 text-sm mb-3">Most Worn</h3>
+          {topWorn.length === 0 ? <p className="text-xs text-gray-400">No items worn yet</p> : (
+            <div className="space-y-2">
+              {topWorn.map(function(item, i) {
+                return (
+                  <div key={item.id} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400" style={{ width: 16, textAlign: "right" }}>{i + 1}</span>
+                    <div className="rounded-lg bg-gray-100 overflow-hidden" style={{ width: 32, height: 32, flexShrink: 0 }}>
+                      {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : <span className="flex items-center justify-center w-full h-full text-sm">{"\u{1F455}"}</span>}
+                    </div>
+                    <p className="text-sm text-gray-700 flex-1 truncate">{item.name}</p>
+                    <span className="text-sm font-bold" style={{ color: "#6366f1" }}>{item.wearCount}x</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {categoryData.length > 0 && (
+          <div className="bg-white rounded-2xl border p-4" style={{ borderColor: "#f3f4f6" }}>
+            <h3 className="font-semibold text-gray-700 text-sm mb-3">Categories</h3>
+            <SimpleDonut data={categoryData} colors={CHART_COLORS} />
+          </div>
+        )}
+
+        {monthlyData.length > 0 && (
+          <div className="bg-white rounded-2xl border p-4" style={{ borderColor: "#f3f4f6" }}>
+            <h3 className="font-semibold text-gray-700 text-sm mb-3">Monthly Activity</h3>
+            <SimpleBarChart data={monthlyData} labelKey="month" valueKey="count" color="#6366f1" />
+          </div>
+        )}
+
+        <div className="bg-white rounded-2xl border p-4" style={{ borderColor: "#f3f4f6" }}>
+          <h3 className="font-semibold text-gray-700 text-sm mb-3">Never Worn ({neverWorn.length})</h3>
+          {neverWorn.length === 0 ? <p className="text-xs text-gray-400">Everything has been worn!</p> : (
+            <div className="flex flex-wrap gap-2">
+              {neverWorn.slice(0, 12).map(function(item) {
+                return (
+                  <div key={item.id} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2 py-1">
+                    <div className="rounded bg-gray-100 overflow-hidden" style={{ width: 20, height: 20, flexShrink: 0 }}>
+                      {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : null}
+                    </div>
+                    <span className="text-xs text-gray-600 truncate" style={{ maxWidth: 80 }}>{item.name}</span>
+                  </div>
+                );
+              })}
+              {neverWorn.length > 12 && <span className="text-xs text-gray-400 self-center">+{neverWorn.length - 12} more</span>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main App ──────────────────────────────────────────────────────────── */
+var TABS = [
+  { id: "closet", label: "Closet", emoji: "\u{1F455}" },
+  { id: "log", label: "Log", emoji: "\u{1F454}" },
+  { id: "calendar", label: "Calendar", emoji: "\u{1F4C5}" },
+  { id: "stats", label: "Stats", emoji: "\u{1F4CA}" },
+];
+
+function App() {
+  const [tab, setTab] = useState("closet");
+  const [clothes, setClothes] = useState([]);
+  const [outfits, setOutfits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showMenu, setShowMenu] = useState(false);
+  const importRef = useRef();
+
+  var loadData = useCallback(async function() {
+    try {
+      var results = await Promise.all([dbGetAll("clothes"), dbGetAll("outfits")]);
+      setClothes(results[0]);
+      setOutfits(results[1]);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }, []);
+
+  useEffect(function() { loadData(); }, [loadData]);
+
+  var handleExport = function() {
+    var data = { clothes: clothes, outfits: outfits, exportDate: new Date().toISOString() };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "wardrobe-backup-" + toDateStr(new Date()) + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowMenu(false);
+  };
+
+  var handleImport = async function(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      var text = await file.text();
+      var data = JSON.parse(text);
+      if (data.clothes && data.outfits) {
+        await dbClear("clothes");
+        await dbClear("outfits");
+        for (var i = 0; i < data.clothes.length; i++) await dbPut("clothes", data.clothes[i]);
+        for (var j = 0; j < data.outfits.length; j++) await dbPut("outfits", data.outfits[j]);
+        await loadData();
+      }
+    } catch (err) { console.error("Import failed:", err); }
+    e.target.value = "";
+    setShowMenu(false);
+  };
+
+  if (loading) {
+    return React.createElement("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" } }, "Loading...");
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50" style={{ paddingBottom: 80 }}>
+      <header className="bg-white sticky top-0 z-40 px-4 flex items-center justify-between" style={{ height: 48, borderBottom: "1px solid #f3f4f6" }}>
+        <h1 className="text-base font-bold text-gray-800">{"\u{1F454}"} Wardrobe</h1>
+        <div className="relative">
+          <button onClick={function() { setShowMenu(!showMenu); }} className="p-2 text-gray-400">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 bg-white rounded-xl shadow-lg border py-1 z-50 fade-in" style={{ top: 40, width: 160, borderColor: "#f3f4f6" }}>
+              <button onClick={handleExport} className="w-full px-4 py-2.5 text-left text-sm text-gray-700 flex items-center gap-2">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export
+              </button>
+              <button onClick={function() { importRef.current && importRef.current.click(); }} className="w-full px-4 py-2.5 text-left text-sm text-gray-700 flex items-center gap-2">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Import
+              </button>
+              <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+            </div>
+          )}
+        </div>
+      </header>
+
+      <main className="px-4 py-4" style={{ maxWidth: 512, margin: "0 auto" }}>
+        {tab === "closet" && <ClosetTab clothes={clothes} onRefresh={loadData} />}
+        {tab === "log" && <OutfitLoggerTab clothes={clothes} outfits={outfits} onRefresh={loadData} />}
+        {tab === "calendar" && <CalendarTab clothes={clothes} outfits={outfits} />}
+        {tab === "stats" && <StatsTab clothes={clothes} outfits={outfits} />}
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-white z-40 safe-bottom" style={{ borderTop: "1px solid #f3f4f6" }}>
+        <div className="flex" style={{ maxWidth: 512, margin: "0 auto" }}>
+          {TABS.map(function(t) {
+            return (
+              <button
+                key={t.id}
+                onClick={function() { setTab(t.id); }}
+                className="flex-1 flex flex-col items-center py-2"
+                style={{ color: tab === t.id ? "#6366f1" : "#9ca3af" }}
+              >
+                <span style={{ fontSize: 20 }}>{t.emoji}</span>
+                <span className="font-medium" style={{ fontSize: 10, marginTop: 2 }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
