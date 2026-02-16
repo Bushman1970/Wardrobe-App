@@ -13,10 +13,15 @@
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
 <style>
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; overscroll-behavior: none; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f9fafb; overscroll-behavior: none; font-size: 18px; }
   ::-webkit-scrollbar { display: none; }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
-  input, select, textarea { font-size: 16px !important; }
+  input, select, textarea { font-size: 18px !important; }
+  .text-xs { font-size: 0.8rem !important; line-height: 1.3 !important; }
+  .text-sm { font-size: 0.95rem !important; line-height: 1.4 !important; }
+  .text-base { font-size: 1.1rem !important; }
+  .text-lg { font-size: 1.25rem !important; }
+  .text-xl { font-size: 1.4rem !important; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .fade-in { animation: fadeIn 0.2s ease-out; }
   @keyframes checkPop { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
@@ -94,11 +99,12 @@ async function dbClear(store) {
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const CATEGORIES = ["Tops", "Bottoms", "Shoes", "Outerwear", "Accessories", "Dresses", "Activewear", "Other"];
+const CATEGORIES = ["Tops", "Bottoms", "Shoes", "Outerwear", "Accessories", "Handbags", "Dresses", "Activewear", "Other"];
 const OCCASIONS = ["Casual", "Work", "Meeting", "Date", "Event", "Travel", "Workout", "Other"];
+const EVENT_SUGGESTIONS = ["Birthday Party", "Wedding", "Job Interview", "Conference", "Dinner Party", "Holiday Party", "Date Night", "Graduation", "Brunch", "Happy Hour", "Family Gathering", "Photo Shoot"];
 const COLORS_LIST = ["Black", "White", "Gray", "Navy", "Blue", "Red", "Green", "Brown", "Tan", "Pink", "Purple", "Orange", "Yellow", "Multi"];
 const CHART_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
-const EMOJI_MAP = { Tops: "\u{1F455}", Bottoms: "\u{1F456}", Shoes: "\u{1F45F}", Outerwear: "\u{1F9E5}", Accessories: "\u{1F392}", Dresses: "\u{1F457}", Activewear: "\u{1FA73}", Other: "\u{1F4E6}" };
+const EMOJI_MAP = { Tops: "\u{1F455}", Bottoms: "\u{1F456}", Shoes: "\u{1F45F}", Outerwear: "\u{1F9E5}", Accessories: "\u{1F392}", Handbags: "\u{1F45C}", Dresses: "\u{1F457}", Activewear: "\u{1FA73}", Other: "\u{1F4E6}" };
 
 function toDateStr(d) { return d.toISOString().split("T")[0]; }
 
@@ -123,7 +129,7 @@ function SimpleBarChart({ data, labelKey, valueKey, color }) {
     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 140, padding: "0 4px" }}>
       {data.map((d, i) => (
         <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%" }}>
-          <span style={{ fontSize: 10, color: "#6b7280", marginBottom: 4 }}>{d[valueKey]}</span>
+          <span style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>{d[valueKey]}</span>
           <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end" }}>
             <div className="bar-animate" style={{
               width: "100%", borderRadius: "6px 6px 0 0",
@@ -132,7 +138,7 @@ function SimpleBarChart({ data, labelKey, valueKey, color }) {
               minHeight: d[valueKey] > 0 ? 4 : 0,
             }} />
           </div>
-          <span style={{ fontSize: 10, color: "#9ca3af", marginTop: 4, whiteSpace: "nowrap" }}>{d[labelKey]}</span>
+          <span style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, whiteSpace: "nowrap" }}>{d[labelKey]}</span>
         </div>
       ))}
     </div>
@@ -165,7 +171,7 @@ function SimpleDonut({ data, colors }) {
         {segments.map((s, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: "#4b5563" }}>{s.name} ({s.value})</span>
+            <span style={{ fontSize: 13, color: "#4b5563" }}>{s.name} ({s.value})</span>
           </div>
         ))}
       </div>
@@ -289,7 +295,7 @@ function ClothingCard({ item, onEdit, onDelete, selectable, selected, onToggle }
           <div style={{ fontSize: 32 }}>{EMOJI_MAP[item.category] || "\u{1F4E6}"}</div>
         )}
       </div>
-      <div className="absolute top-1 right-1 bg-white rounded-full px-1.5 py-0.5 text-xs font-bold text-indigo-600" style={{ fontSize: 10, opacity: 0.9 }}>
+      <div className="absolute top-1 right-1 bg-white rounded-full px-1.5 py-0.5 text-xs font-bold text-indigo-600" style={{ fontSize: 12, opacity: 0.9 }}>
         {item.wearCount}x
       </div>
       {selected && (
@@ -302,7 +308,7 @@ function ClothingCard({ item, onEdit, onDelete, selectable, selected, onToggle }
           <div className="rounded-full border" style={{ width: 10, height: 10, background: COLOR_DOT[item.color] || "#ccc", borderColor: "#e5e7eb", flexShrink: 0 }} />
           <h3 className="text-xs font-medium text-gray-800 truncate">{item.name}</h3>
         </div>
-        <p className="text-xs text-gray-400 truncate" style={{ fontSize: 10 }}>{item.category}{item.brand ? " \u00b7 " + item.brand : ""}</p>
+        <p className="text-xs text-gray-400 truncate" style={{ fontSize: 12 }}>{item.category}{item.brand ? " \u00b7 " + item.brand : ""}</p>
       </div>
     </div>
   );
@@ -407,9 +413,11 @@ function OutfitLoggerTab({ clothes, outfits, onRefresh }) {
   const [selected, setSelected] = useState(new Set());
   const [occasion, setOccasion] = useState("Casual");
   const [people, setPeople] = useState("");
+  const [event, setEvent] = useState("");
   const [notes, setNotes] = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [saved, setSaved] = useState(false);
+  const [showEventSuggestions, setShowEventSuggestions] = useState(false);
 
   var existingOutfit = useMemo(function() { return outfits.find(function(o) { return o.date === date; }); }, [outfits, date]);
 
@@ -418,14 +426,22 @@ function OutfitLoggerTab({ clothes, outfits, onRefresh }) {
       setSelected(new Set(existingOutfit.items));
       setOccasion(existingOutfit.occasion || "Casual");
       setPeople(existingOutfit.people || "");
+      setEvent(existingOutfit.event || "");
       setNotes(existingOutfit.notes || "");
     } else {
       setSelected(new Set());
       setOccasion("Casual");
       setPeople("");
+      setEvent("");
       setNotes("");
     }
   }, [existingOutfit]);
+
+  var filteredEventSuggestions = useMemo(function() {
+    if (!event.trim()) return EVENT_SUGGESTIONS;
+    var q = event.toLowerCase();
+    return EVENT_SUGGESTIONS.filter(function(s) { return s.toLowerCase().indexOf(q) >= 0; });
+  }, [event]);
 
   var toggle = function(id) {
     setSelected(function(prev) {
@@ -443,7 +459,7 @@ function OutfitLoggerTab({ clothes, outfits, onRefresh }) {
   var handleSave = async function() {
     var outfitId = (existingOutfit && existingOutfit.id) || uid();
     var selArray = Array.from(selected);
-    await dbPut("outfits", { id: outfitId, date: date, items: selArray, occasion: occasion, people: people, notes: notes });
+    await dbPut("outfits", { id: outfitId, date: date, items: selArray, occasion: occasion, people: people, event: event, notes: notes });
     for (var i = 0; i < clothes.length; i++) {
       var item = clothes[i];
       var was = existingOutfit && existingOutfit.items && existingOutfit.items.indexOf(item.id) >= 0;
@@ -477,8 +493,32 @@ function OutfitLoggerTab({ clothes, outfits, onRefresh }) {
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Who are you meeting?</label>
-          <input className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" style={{ fontSize: 16 }} placeholder="e.g. Lunch with Sarah" value={people} onChange={function(e) { setPeople(e.target.value); }} />
+          <label className="block text-xs font-medium text-gray-500 mb-1">People</label>
+          <input className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none" style={{ fontSize: 16 }} placeholder="e.g. Lunch with Sarah, Meeting with Dave" value={people} onChange={function(e) { setPeople(e.target.value); }} />
+        </div>
+        <div className="relative">
+          <label className="block text-xs font-medium text-gray-500 mb-1">Event</label>
+          <input
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none"
+            style={{ fontSize: 16 }}
+            placeholder="e.g. Wedding, Job Interview, Birthday"
+            value={event}
+            onChange={function(e) { setEvent(e.target.value); }}
+            onFocus={function() { setShowEventSuggestions(true); }}
+            onBlur={function() { setTimeout(function() { setShowEventSuggestions(false); }, 200); }}
+          />
+          {showEventSuggestions && filteredEventSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 bg-white border rounded-xl shadow-lg z-20 overflow-hidden" style={{ top: "100%", marginTop: 4, borderColor: "#e5e7eb", maxHeight: 160, overflowY: "auto" }}>
+              {filteredEventSuggestions.map(function(s) {
+                return (
+                  <button key={s} className="w-full px-3 py-2 text-left text-sm text-gray-700" style={{ borderBottom: "1px solid #f9fafb" }}
+                    onMouseDown={function(e) { e.preventDefault(); setEvent(s); setShowEventSuggestions(false); }}>
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
@@ -557,7 +597,11 @@ function CalendarTab({ clothes, outfits }) {
   var personResults = useMemo(function() {
     if (!personSearch.trim()) return null;
     var q = personSearch.toLowerCase();
-    return outfits.filter(function(o) { return o.people && o.people.toLowerCase().indexOf(q) >= 0; }).sort(function(a, b) { return b.date.localeCompare(a.date); });
+    return outfits.filter(function(o) {
+      var matchPeople = o.people && o.people.toLowerCase().indexOf(q) >= 0;
+      var matchEvent = o.event && o.event.toLowerCase().indexOf(q) >= 0;
+      return matchPeople || matchEvent;
+    }).sort(function(a, b) { return b.date.localeCompare(a.date); });
   }, [outfits, personSearch]);
 
   var dayOutfit = selectedDay ? outfitMap[selectedDay] : null;
@@ -573,7 +617,7 @@ function CalendarTab({ clothes, outfits }) {
 
       <div className="relative mb-4">
         <svg className="absolute text-gray-300" style={{ left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input className="w-full bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none" style={{ paddingLeft: 36, paddingRight: 12, paddingTop: 10, paddingBottom: 10, fontSize: 16 }} placeholder="Search by person..." value={personSearch} onChange={function(e) { setPersonSearch(e.target.value); }} />
+        <input className="w-full bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none" style={{ paddingLeft: 36, paddingRight: 12, paddingTop: 10, paddingBottom: 10, fontSize: 16 }} placeholder="Search by person or event..." value={personSearch} onChange={function(e) { setPersonSearch(e.target.value); }} />
       </div>
 
       {personResults && (
@@ -601,7 +645,8 @@ function CalendarTab({ clothes, outfits }) {
                       })}
                     </div>
                     <div className="flex-1" style={{ minWidth: 0 }}>
-                      <p className="text-xs text-gray-600 truncate">{outfit.people}</p>
+                      {outfit.people && <p className="text-xs text-gray-600 truncate">{outfit.people}</p>}
+                      {outfit.event && <p className="text-xs truncate" style={{ color: "#7c3aed" }}>{outfit.event}</p>}
                       <p className="text-xs text-gray-400">{outfit.occasion}</p>
                     </div>
                   </div>
@@ -638,26 +683,31 @@ function CalendarTab({ clothes, outfits }) {
             var isToday = dateStr === toDateStr(new Date());
             return (
               <div key={day} style={{ height: 52, borderBottom: "1px solid #fafafa", borderRight: "1px solid #fafafa", padding: 2, background: selectedDay === dateStr ? "#eef2ff" : "transparent" }} onClick={function() { setSelectedDay(dateStr); }}>
-                <div className="text-center" style={{ fontSize: 11, fontWeight: isToday ? 700 : 400, color: isToday ? "#6366f1" : "#6b7280" }}>
+                <div className="text-center" style={{ fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? "#6366f1" : "#6b7280" }}>
                   {isToday ? (
                     <span style={{ background: "#6366f1", color: "white", width: 20, height: 20, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>{day}</span>
                   ) : day}
                 </div>
                 {outfit && (
-                  <div className="flex justify-center" style={{ marginTop: 2 }}>
-                    {outfit.items.slice(0, 2).map(function(id) {
-                      var item = clothesMap[id];
-                      if (!item) return null;
-                      return (
-                        <div key={id} className="rounded-full border border-white bg-gray-100 overflow-hidden" style={{ width: 14, height: 14, marginLeft: -2 }}>
-                          {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : null}
+                  <div className="flex flex-col items-center" style={{ marginTop: 1, gap: 1 }}>
+                    <div className="flex justify-center" style={{ marginLeft: 0 }}>
+                      {outfit.items.slice(0, 2).map(function(id) {
+                        var item = clothesMap[id];
+                        if (!item) return null;
+                        return (
+                          <div key={id} className="rounded-full border border-white bg-gray-100 overflow-hidden" style={{ width: 14, height: 14, marginLeft: -2 }}>
+                            {item.photo ? <img src={item.photo} className="w-full h-full object-cover" /> : null}
+                          </div>
+                        );
+                      })}
+                      {outfit.items.length > 0 && !outfit.items.some(function(id) { return clothesMap[id] && clothesMap[id].photo; }) && (
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <span style={{ fontSize: 7 }}>{"\u{1F455}"}</span>
                         </div>
-                      );
-                    })}
-                    {outfit.items.length > 0 && !outfit.items.some(function(id) { return clothesMap[id] && clothesMap[id].photo; }) && (
-                      <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ fontSize: 7 }}>{"\u{1F455}"}</span>
-                      </div>
+                      )}
+                    </div>
+                    {(outfit.event || outfit.people) && (
+                      <div style={{ width: 4, height: 4, borderRadius: "50%", background: outfit.event ? "#7c3aed" : "#f59e0b" }} />
                     )}
                   </div>
                 )}
@@ -673,6 +723,7 @@ function CalendarTab({ clothes, outfits }) {
             <div className="flex flex-wrap gap-2">
               <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: "#eef2ff", color: "#4338ca" }}>{dayOutfit.occasion}</span>
               {dayOutfit.people && <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: "#fef3c7", color: "#92400e" }}>{dayOutfit.people}</span>}
+              {dayOutfit.event && <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: "#f3e8ff", color: "#7c3aed" }}>{dayOutfit.event}</span>}
             </div>
             {dayOutfit.notes && <p className="text-sm text-gray-500">{dayOutfit.notes}</p>}
             <div className="grid grid-cols-2 gap-2">
@@ -898,7 +949,7 @@ function App() {
                 style={{ color: tab === t.id ? "#6366f1" : "#9ca3af" }}
               >
                 <span style={{ fontSize: 20 }}>{t.emoji}</span>
-                <span className="font-medium" style={{ fontSize: 10, marginTop: 2 }}>{t.label}</span>
+                <span className="font-medium" style={{ fontSize: 12, marginTop: 2 }}>{t.label}</span>
               </button>
             );
           })}
